@@ -1,19 +1,17 @@
 #!/usr/bin/env python3
 """
-Finance Research Terminal — GUI Wrapper v3.0
-===================================================
+Finance Research Terminal — GUI Wrapper v4.0
+==================================================
 Proper menu-driven GUI with clickable buttons.
 Launch the .app, select an action, then provide ticker(s).
-
-Reversible: Delete this file and the .app bundle to undo.
 """
 
 import sys
+import os
 import threading
 import tkinter as tk
 from tkinter import scrolledtext, messagebox
 
-import os
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from research_terminal import (
     ResearchState, DataIngestionAgent, CalculationAgent,
@@ -29,168 +27,140 @@ class FinanceApp:
 
     def __init__(self):
         self.root = tk.Tk()
-        self.root.title("Finance Research Terminal v3.0")
+        self.root.title("Finance Research Terminal v4.0")
         self.root.geometry("940x720")
         self.root.configure(bg="#0d0d0d")
         self.root.resizable(True, True)
 
         self.running = False
+        self.input_mode = "menu"
         self._build_ui()
 
-    # ──────────────────────────────────────────────────────
-    # UI BUILDERS
-    # ──────────────────────────────────────────────────────
+    def _safe_print(self, text):
+        """Thread-safe print to the output widget."""
+        self.root.after(0, lambda: self._do_print(text))
 
-    def _clear_output(self):
-        """Clear the output text widget."""
-        self.output.config(state=tk.NORMAL)
-        self.output.delete("1.0", tk.END)
-        self.output.config(state=tk.DISABLED)
-
-    def _print(self, text):
-        """Print text to the output widget."""
+    def _do_print(self, text):
+        """Actually print to the output widget (called from main thread)."""
         self.output.config(state=tk.NORMAL)
         self.output.insert(tk.END, text + "\n")
         self.output.see(tk.END)
         self.output.config(state=tk.DISABLED)
 
+    def _safe_clear(self):
+        """Thread-safe clear."""
+        self.root.after(0, lambda: self._do_clear())
+
+    def _do_clear(self):
+        self.output.config(state=tk.NORMAL)
+        self.output.delete("1.0", tk.END)
+        self.output.config(state=tk.DISABLED)
+
     def _switch_to_input_mode(self, mode="single"):
-        """
-        Switch UI to input mode: hide buttons, show ticker input.
-        mode: 'single' for one ticker, 'compare' for two tickers
-        """
-        self._clear_output()
-        self._print("  ⌂ Back | Main Menu")
-        self._print("─" * 50)
-        self._print("")
-
-        # Show/hide appropriate widgets
-        self.btn_frame.pack_forget()
-        self.input_frame.pack(side=tk.BOTTOM, fill=tk.X)
-
+        self._safe_clear()
+        self._safe_print("  ⌂ Back | Main Menu")
+        self._safe_print("─" * 50)
+        self._safe_print("")
         if mode == "single":
-            self._print("  \U0001f4c8 Enter ONE ticker and press ▶ Run")
-            self._print("     Examples: AAPL, MSFT, NVDA, GOOG, MU")
+            self._safe_print("  📈 Enter ONE ticker and press ▶ Run")
+            self._safe_print("     Examples: AAPL, MSFT, NVDA, GOOG, MU")
         elif mode == "compare":
-            self._print("  \U0001f4c8 Enter FIRST ticker below, then second")
-            self._print("     after hitting Run. Examples: AAPL MSFT")
-
+            self._safe_print("  📈 Enter FIRST ticker below, then second")
+            self._safe_print("     after hitting Run. Examples: AAPL MSFT")
         self.input_mode = mode
-        self.input_entry.config(state=tk.NORMAL)
-        self.input_entry.delete(0, tk.END)
-        self.input_entry.focus()
+        self.root.after(0, lambda: self.input_entry.config(state=tk.NORMAL))
+        self.root.after(0, lambda: self.input_entry.delete(0, tk.END))
+        self.root.after(0, lambda: self.input_entry.focus())
 
     def _switch_to_menu(self):
-        """Switch UI back to the main menu."""
-        self._clear_output()
-        self.input_frame.pack_forget()
-        self.btn_frame.pack()
-
-        self._print("")
-        self._print("  \U0001f4b0  FINANCE RESEARCH TERMINAL v3.0")
-        self._print("     Multi-Agent DCF Analysis Engine")
-        self._print("")
-        self._print("  \U0001f4cc Select an action below:")
-        self._print("")
+        self._safe_clear()
+        self.root.after(0, lambda: self.input_frame.pack_forget())
+        self.root.after(0, lambda: self.btn_frame.pack())
+        self._safe_print("")
+        self._safe_print("  🏦 FINANCE RESEARCH TERMINAL v4.0")
+        self._safe_print("     Multi-Agent DCF Analysis Engine")
+        self._safe_print("")
+        self._safe_print("  📋 Select an action below:")
+        self._safe_print("")
+        self.input_mode = "menu"
 
     def _switch_to_explain(self):
-        """Show the metric explanation guide."""
-        self._clear_output()
-        self.input_frame.pack_forget()
-        self.btn_frame.pack_forget()
-
+        self._safe_clear()
+        self.root.after(0, lambda: self.input_frame.pack_forget())
+        self.root.after(0, lambda: self.btn_frame.pack_forget())
         explanations = [
-            ("Net Income", "Total profit after all expenses, taxes, and costs. The bottom line."),
-            ("Operating Cash Flow", "Actual cash generated by core business operations. More reliable than net income."),
-            ("Capital Expenditures", "Money spent on physical assets (factories, equipment). Shown as negative."),
-            ("Free Cash Flow (FCF)", "OCF minus CapEx. The cash truly available to shareholders."),
-            ("FCF Margin", "FCF as a percentage of revenue. Higher = more efficient cash generation."),
-            ("FCF Yield", "FCF divided by market cap. Shows cash return per dollar invested."),
-            ("Earnings Per Share (EPS)", "Net income divided by shares outstanding. What each share earns."),
-            ("FCF Per Share", "FCF divided by shares. The 'real' earning power per share."),
-            ("CapEx Intensity", "CapEx/OCF ratio. Below 30% = asset-light, above 50% = capital-heavy."),
-            ("Accrual Ratio", "OCF vs Net Income gap. Positive = strong cash backing for reported earnings."),
-            ("DCF Intrinsic Value", "Present value of all future cash flows. The 'fair' price."),
-            ("Buyback Effect", "2.5% annual share reduction. Each year's buyback amplifies per-share value."),
-            ("Quality Score", "1-3 rating. Each point = one health check passed (FCF positive, earnings quality, FCF yield)."),
+            ("Net Income", "Total profit after all expenses, taxes, and costs."),
+            ("Operating Cash Flow", "Actual cash generated by core business operations."),
+            ("Capital Expenditures", "Money spent on physical assets. Shown as negative."),
+            ("Free Cash Flow (FCF)", "OCF minus CapEx. Cash truly available to shareholders."),
+            ("FCF Yield", "FCF / Market Cap. Cash return per dollar invested."),
+            ("EPS", "Net income divided by shares outstanding."),
+            ("CapEx Intensity", "CapEx/OCF ratio. Below 30% = asset-light."),
+            ("Accrual Ratio", "OCF vs Net Income gap. Positive = strong cash backing."),
+            ("DCF Intrinsic Value", "Present value of all future cash flows."),
+            ("Buyback Effect", "2.5% annual share reduction. Amplifies per-share value."),
+            ("Quality Score", "1-3 rating. Each point = one health check passed."),
         ]
-
         for metric, desc in explanations:
-            self._print(f"  \U0001f535 {metric}")
-            self._print(f"     {desc}")
-            self._print("")
-
-        self._print("─" * 50)
-        self._print("  \U0001f519 Press the menu button below to go back")
-        self._print("")
-
-    # ──────────────────────────────────────────────────────
-    # ACTIONS
-    # ──────────────────────────────────────────────────────
+            self._safe_print(f"  🔣 {metric}")
+            self._safe_print(f"     {desc}")
+            self._safe_print("")
+        self._safe_print("─" * 50)
+        self._safe_print("  🔙 Press the menu button below to go back")
+        self._safe_print("")
 
     def _on_analyze(self):
-        """Switch to single ticker input mode."""
         self._switch_to_input_mode("single")
 
     def _on_compare(self):
-        """Switch to two-ticker comparison mode."""
         self._switch_to_input_mode("compare")
 
     def _on_explain(self):
-        """Show metric explanations."""
         self._switch_to_explain()
 
     def _on_menu(self):
-        """Return to main menu."""
         self._switch_to_menu()
-        self._print("  \U0001f519 Back at main menu. Select an action above.")
-        self._print("")
+        self._safe_print("  🔙 Back at main menu. Select an action above.")
+        self._safe_print("")
 
     def _on_submit(self):
-        """Handle the Run button press based on current mode."""
         text = self.input_var.get().strip().upper()
         if not text:
             return
-
         tickers = text.split()
-
         if self.input_mode == "single":
             ticker = tickers[0]
             if not VALID_TICKER.match(ticker):
-                self._print(f"\n  \U0001f4a5 Invalid ticker '{ticker}'")
-                self._print("     Use 1-5 letter symbols like AAPL")
-                self._print("")
-                self.input_entry.delete(0, tk.END)
+                self._safe_print(f"\n  🚥 Invalid ticker '{ticker}'")
+                self._safe_print("     Use 1-5 letter symbols like AAPL")
+                self._safe_print("")
+                self.root.after(0, lambda: self.input_entry.delete(0, tk.END))
                 return
             self._run_analysis(ticker)
-
         elif self.input_mode == "compare":
             if len(tickers) < 2:
-                self._print("\n  \U0001f4a5 Enter TWO tickers separated by space")
-                self._print("     Example: AAPL MSFT")
-                self._print("")
-                self.input_entry.delete(0, tk.END)
+                self._safe_print("\n  🚥 Enter TWO tickers separated by space")
+                self._safe_print("     Example: AAPL MSFT")
+                self._safe_print("")
+                self.root.after(0, lambda: self.input_entry.delete(0, tk.END))
                 return
             t1, t2 = tickers[0], tickers[1]
             if not VALID_TICKER.match(t1) or not VALID_TICKER.match(t2):
-                self._print("\n  \U0001f4a5 Both must be valid tickers (1-5 letters)")
-                self._print("")
-                self.input_entry.delete(0, tk.END)
+                self._safe_print("\n  🚥 Both must be valid tickers (1-5 letters)")
+                self._safe_print("")
+                self.root.after(0, lambda: self.input_entry.delete(0, tk.END))
                 return
             self._run_comparison(t1, t2)
 
     def _run_analysis(self, ticker):
-        """Run the full pipeline for one ticker in a background thread."""
-        self.input_entry.config(state=tk.DISABLED)
+        self.root.after(0, lambda: self.input_entry.config(state=tk.DISABLED))
         self.running = True
-        self._print(f"\n  \u23f3 Fetching data for {ticker}...")
-
+        self._safe_print(f"\n  ⏳ Fetching data for {ticker}...")
         thread = threading.Thread(target=self._pipeline_single, args=(ticker,))
         thread.daemon = True
         thread.start()
 
     def _pipeline_single(self, ticker):
-        """Full pipeline for a single ticker."""
         try:
             state = ResearchState()
             agent1 = DataIngestionAgent(state)
@@ -200,29 +170,60 @@ class FinanceApp:
             state = run_hardened_buyback_dcf(state)
             agent3 = SynthesisAgent(state)
             agent3.synthesize()
-            agent3.print_report()
+            report = state.final_report
+            if report:
+                self._safe_print("\n  ════════════════════════════════════════════")
+                self._safe_print(f"  📊 FINAL REPORT — {report.get('ticker', ticker)} ({report.get('company_name', '')})")
+                self._safe_print("  ════════════════════════════════════════════")
+                raw = report.get("raw_data", {})
+                calc = report.get("calculated_metrics", {})
+                dcf = report.get("dcf_scenarios", {})
+                current_price = report.get("current_price", 0)
+                self._safe_print(f"\n  💰 Free Cash Flow: ${calc.get('free_cash_flow', 0)/1e9:.2f}B")
+                if dcf:
+                    base_price = dcf.get("Base Case", {}).get("estimated_stock_price", 0)
+                    if base_price > 0 and current_price > 0:
+                        gap = ((base_price - current_price) / current_price) * 100
+                        self._safe_print(f"  🎯 DCF Base: ${base_price:.2f} ({gap:+.1f}%)")
+                self._safe_print(f"\n  🏆 Quality Score: {report.get('quality_score', 'N/A')}")
+                self._safe_print(f"\n  💡 KEY TAKEAWAYS")
+                for i, t in enumerate(report.get("takeaways", []), 1):
+                    self._safe_print(f"  {i}. {t}")
+                layman_score = 0
+                fcf = calc.get("free_cash_flow")
+                if fcf and fcf > 0: layman_score += 1
+                rev_g = calc.get("revenue_growth_yfinance")
+                if rev_g and rev_g > 10: layman_score += 1
+                tag = "BUY"
+                if dcf and current_price > 0 and base_price > 0:
+                    gap = ((base_price - current_price) / current_price) * 100
+                    if gap > 0: tag = "BUY"
+                    else: tag = "SELL"
+                if tag == "BUY": layman_score += 1
+                self._safe_print(f"\n  🧑 LAYMAN SUMMARY: SCORE {layman_score}/3")
+                self._safe_print(f"     Making money? {'YES' if fcf and fcf > 0 else 'NO'}")
+                self._safe_print(f"     Growing? {'YES' if rev_g and rev_g > 10 else 'NO'}")
+                self._safe_print(f"     Buy? {'YES' if tag == 'BUY' else 'NOT NOW'}")
+                self._safe_print(f"\n  ✅ Report complete.\n")
         except Exception as e:
-            self._print(f"\n  \U0001f4a5 Error: {e}")
-            self._print("     Please try a different ticker.")
+            self._safe_print(f"\n  🚥 Error: {e}")
+            self._safe_print("     Please try a different ticker.")
         finally:
             self.running = False
-            self.input_entry.config(state=tk.NORMAL)
-            self._print("\n" + "\u2014" * 40)
-            self._print("  \U0001f4dc Press ▶ Run or click ⌂ Back to menu")
-            self._print("")
+            self.root.after(0, lambda: self.input_entry.config(state=tk.NORMAL))
+            self._safe_print("\n" + "─" * 40)
+            self._safe_print("  📥 Press ▶ Run or click ⌂ Back to menu")
+            self._safe_print("")
 
     def _run_comparison(self, t1, t2):
-        """Run comparison of two tickers in a background thread."""
-        self.input_entry.config(state=tk.DISABLED)
+        self.root.after(0, lambda: self.input_entry.config(state=tk.DISABLED))
         self.running = True
-        self._print(f"\n  \u23f3 Comparing {t1} vs {t2}...")
-
+        self._safe_print(f"\n  ⏳ Comparing {t1} vs {t2}...")
         thread = threading.Thread(target=self._pipeline_compare, args=(t1, t2))
         thread.daemon = True
         thread.start()
 
     def _pipeline_compare(self, t1, t2):
-        """Full pipeline for comparison of two tickers."""
         try:
             state1 = ResearchState()
             agent1 = DataIngestionAgent(state1)
@@ -230,195 +231,107 @@ class FinanceApp:
             agent2 = CalculationAgent(state1)
             agent2.calculate()
             state1 = run_hardened_buyback_dcf(state1)
-            agent3_1 = SynthesisAgent(state1)
-            agent3_1.synthesize()
 
             state2 = ResearchState()
-            agent4 = DataIngestionAgent(state2)
-            agent4.ingest(t2)
-            agent5 = CalculationAgent(state2)
-            agent5.calculate()
+            agent3 = DataIngestionAgent(state2)
+            agent3.ingest(t2)
+            agent4 = CalculationAgent(state2)
+            agent4.calculate()
             state2 = run_hardened_buyback_dcf(state2)
-            agent6 = SynthesisAgent(state2)
-            agent6.synthesize()
 
-            # Print side-by-side comparison
-            self._print(f"\n")
-            self._print("  ════════════════════════════════════════════")
-            self._print("  \U0001f4ca  COMPARISON REPORT")
-            self._print("  ════════════════════════════════════════════")
-            self._print("")
-
+            self._safe_print(f"\n  ════════════════════════════════════════════")
+            self._safe_print(f"  📊 COMPARISON: {t1} vs {t2}")
+            self._safe_print(f"  ════════════════════════════════════════════")
             raw1, raw2 = state1.raw_financial_data, state2.raw_financial_data
             calc1, calc2 = state1.calculated_metrics, state2.calculated_metrics
-
-            self._print(f"  {'Metric':<28} {'│':^3} {'│':^3}")
-            self._print(f"  {'─'*28} {'─'*3} {'─'*3} {'─'*3}")
-
-            def fmt(val, fmt_type):
-                if val is None: return "N/A"
-                if fmt_type == "usd": return f"${val:.2f}"
-                if fmt_type == "billions": return f"${val/1e9:.2f}B"
-                if fmt_type == "pct": return f"{val*100:.2f}%"
-                return str(val)
-
-            rows = [
-                ("Company", raw1.get('company_name', ''), raw2.get('company_name', ''), "text"),
-                ("Market Price", raw1.get('current_price', 0), raw2.get('current_price', 0), "usd"),
-                ("Net Income", raw1.get('Net Income', 0), raw2.get('Net Income', 0), "billions"),
-                ("Operating Cash Flow", raw1.get('Operating Cash Flow', 0), raw2.get('Operating Cash Flow', 0), "billions"),
-                ("Free Cash Flow", calc1.get('free_cash_flow', 0), calc2.get('free_cash_flow', 0), "billions"),
-                ("FCF Margin", calc1.get('fcf_margin', 0), calc2.get('fcf_margin', 0), "pct"),
-                ("EPS", calc1.get('eps', 0), calc2.get('eps', 0), "usd"),
-                ("CapEx Intensity", abs(raw1.get('Capital Expenditures', 0)) / raw1.get('Operating Cash Flow', 1), abs(raw2.get('Capital Expenditures', 0)) / raw2.get('Operating Cash Flow', 1), "pct"),
-            ]
-
-            for label, v1, v2, fmt_type in rows:
-                self._print(f"  {label:<28} {'│':^3} {fmt(v1, fmt_type):<28} {'│':^3} {fmt(v2, fmt_type)}")
-
-            self._print("")
-            self._print("  ════════════════════════════════════════════")
-
+            dcf1 = calc1.get('dcf_scenarios', {})
+            dcf2 = calc2.get('dcf_scenarios', {})
+            p1 = state1.final_report.get("current_price", 0)
+            p2 = state2.final_report.get("current_price", 0)
+            self._safe_print(f"\n  {'Metric':<20} {'│':^3} {'│':^3}")
+            self._safe_print(f"  {'─'*20} {'─'*3} {'─'*3} {'─'*3}")
+            self._safe_print(f"  {'Price':<20} {'│':^3} {'│':^3}")
+            self._safe_print(f"  {'$' + format(p1, '.2f'):<20} {'│':^3} {'│':^3}")
+            self._safe_print(f"  {'$' + format(p2, '.2f'):<20} {'│':^3} {'│':^3}")
+            self._safe_print(f"  {'FCF':<20} {'│':^3} {'│':^3}")
+            self._safe_print(f"  {'$' + format(calc1.get('free_cash_flow',0)/1e9, '.2f') + 'B':<20} {'│':^3} {'│':^3}")
+            self._safe_print(f"  {'$' + format(calc2.get('free_cash_flow',0)/1e9, '.2f') + 'B':<20} {'│':^3} {'│':^3}")
+            self._safe_print(f"\n  ════════════════════════════════════════════")
         except Exception as e:
-            self._print(f"\n  \U0001f4a5 Comparison error: {e}")
+            self._safe_print(f"\n  🚥 Comparison error: {e}")
         finally:
             self.running = False
-            self.input_entry.config(state=tk.NORMAL)
-            self._print("\n" + "\u2014" * 40)
-            self._print("  \U0001f4dc Press ▶ Run or click ⌂ Back to menu")
-            self._print("")
-
-    # ──────────────────────────────────────────────────────
-    # MAIN UI SETUP
-    # ──────────────────────────────────────────────────────
+            self.root.after(0, lambda: self.input_entry.config(state=tk.NORMAL))
+            self._safe_print("\n" + "─" * 40)
+            self._safe_print("  📥 Press ▶ Run or click ⌂ Back to menu")
+            self._safe_print("")
 
     def _build_ui(self):
-        """Build the full menu-driven interface."""
-
-        # ── Header Bar ──
+        # Header
         header = tk.Frame(self.root, bg="#1a1a2e", height=55)
         header.pack(fill=tk.X)
         header.pack_propagate(False)
+        tk.Label(header, text="  🏦 FINANCE RESEARCH TERMINAL v4.0",
+                 font=("Menlo", 14, "bold"), fg="#00ff88", bg="#1a1a2e"
+                 ).pack(side=tk.LEFT, padx=15, pady=12)
+        tk.Label(header, text="  Menu-Driven",
+                 font=("Menlo", 9), fg="#666666", bg="#1a1a2e"
+                 ).pack(side=tk.RIGHT, padx=15, pady=12)
 
-        tk.Label(
-            header, text="  \U0001f4b0  Finance Research Terminal v3.0",
-            font=("Menlo", 14, "bold"), fg="#00ff88", bg="#1a1a2e"
-        ).pack(side=tk.LEFT, padx=15, pady=12)
-
-        tk.Label(
-            header, text="  Menu-Driven",
-            font=("Menlo", 9), fg="#666666", bg="#1a1a2e"
-        ).pack(side=tk.RIGHT, padx=15, pady=12)
-
-        # ── Output Terminal ──
+        # Output
         frame = tk.Frame(self.root, bg="#0d0d0d")
         frame.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
-
         self.output = scrolledtext.ScrolledText(
-            frame,
-            font=("Menlo", 11),
-            bg="#0d0d0d",
-            fg="#00ff88",
-            insertbackground="#00ff88",
-            selectbackground="#1a3a1a",
-            wrap=tk.WORD,
-            state=tk.DISABLED,
-            padx=15,
-            pady=10,
+            frame, font=("Menlo", 11), bg="#0d0d0d", fg="#00ff88",
+            insertbackground="#00ff88", selectbackground="#1a3a1a",
+            wrap=tk.WORD, state=tk.DISABLED, padx=15, pady=10,
         )
         self.output.pack(fill=tk.BOTH, expand=True)
 
-        # ── Button Frame (Main Menu) ──
+        # Button Frame
         self.btn_frame = tk.Frame(self.root, bg="#1a1a2e", height=100)
         self.btn_frame.pack(fill=tk.X, side=tk.BOTTOM)
         self.btn_frame.pack_propagate(False)
+        btn_style = {"font": ("Menlo", 12, "bold"), "borderwidth": 0, "padx": 20, "pady": 8}
 
-        btn_style = {
-            "font": ("Menlo", 12, "bold"),
-            "borderwidth": 0,
-            "padx": 20,
-            "pady": 8,
-        }
+        tk.Button(self.btn_frame, text="  🔍 Analyze a Ticker", command=self._on_analyze,
+                  bg="#1a3a1a", fg="#00ff88", activebackground="#00ff88", activeforeground="#0d0d0d",
+                  **btn_style).pack(side=tk.LEFT, padx=10, pady=15)
+        tk.Button(self.btn_frame, text="  📊 Compare Two", command=self._on_compare,
+                  bg="#1a2a3a", fg="#00aaff", activebackground="#00aaff", activeforeground="#0d0d0d",
+                  **btn_style).pack(side=tk.LEFT, padx=10, pady=15)
+        tk.Button(self.btn_frame, text="  🔣 What Do Metrics Mean?", command=self._on_explain,
+                  bg="#3a2a1a", fg="#ffaa00", activebackground="#ffaa00", activeforeground="#0d0d0d",
+                  **btn_style).pack(side=tk.LEFT, padx=10, pady=15)
+        tk.Button(self.btn_frame, text="  ⌂ Menu", command=self._on_menu,
+                  bg="#2a2a2a", fg="#aaaaaa", activebackground="#aaaaaa", activeforeground="#0d0d0d",
+                  **btn_style).pack(side=tk.LEFT, padx=10, pady=15)
 
-        # Analyze button
-        tk.Button(
-            self.btn_frame, text="  \U0001f50d  Analyze a Ticker",
-            command=self._on_analyze,
-            bg="#1a3a1a", fg="#00ff88",
-            activebackground="#00ff88", activeforeground="#0d0d0d",
-            **btn_style
-        ).pack(side=tk.LEFT, padx=10, pady=15)
-
-        # Compare button
-        tk.Button(
-            self.btn_frame, text="  \U0001f4ca  Compare Two",
-            command=self._on_compare,
-            bg="#1a2a3a", fg="#00aaff",
-            activebackground="#00aaff", activeforeground="#0d0d0d",
-            **btn_style
-        ).pack(side=tk.LEFT, padx=10, pady=15)
-
-        # Explain button
-        tk.Button(
-            self.btn_frame, text="  \U0001f4d6  What Do Metrics Mean?",
-            command=self._on_explain,
-            bg="#3a2a1a", fg="#ffaa00",
-            activebackground="#ffaa00", activeforeground="#0d0d0d",
-            **btn_style
-        ).pack(side=tk.LEFT, padx=10, pady=15)
-
-        # Menu button
-        tk.Button(
-            self.btn_frame, text="  ⌂  Menu",
-            command=self._on_menu,
-            bg="#2a2a2a", fg="#aaaaaa",
-            activebackground="#aaaaaa", activeforeground="#0d0d0d",
-            **btn_style
-        ).pack(side=tk.LEFT, padx=10, pady=15)
-
-        # ── Input Bar ──
+        # Input Bar
         self.input_frame = tk.Frame(self.root, bg="#1a1a2e", height=60)
         self.input_frame.pack(fill=tk.X, side=tk.BOTTOM)
         self.input_frame.pack_propagate(False)
-
         self.input_var = tk.StringVar()
 
-        tk.Label(
-            self.input_frame, text="  \U0001f4b7", font=("Menlo", 16),
-            fg="#00ff88", bg="#1a1a2e"
-        ).pack(side=tk.LEFT, padx=10, pady=15)
-
-        self.input_entry = tk.Entry(
-            self.input_frame,
-            textvariable=self.input_var,
-            font=("Menlo", 13),
-            bg="#0d0d0d",
-            fg="#00ff88",
-            insertbackground="#00ff88",
-            borderwidth=0,
-            selectbackground="#1a3a1a",
-        )
-        self.input_entry.pack(side=tk.LEFT, fill=tk.X, expand=True,
-                              padx=5, pady=15)
+        tk.Label(self.input_frame, text="  📈", font=("Menlo", 16), fg="#00ff88", bg="#1a1a2e"
+                 ).pack(side=tk.LEFT, padx=10, pady=15)
+        self.input_entry = tk.Entry(self.input_frame, textvariable=self.input_var,
+                                    font=("Menlo", 13), bg="#0d0d0d", fg="#00ff88",
+                                    insertbackground="#00ff88", borderwidth=0,
+                                    selectbackground="#1a3a1a",
+                                    )
+        self.input_entry.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=5, pady=15)
         self.input_entry.bind("<Return>", lambda e: self._on_submit())
+        tk.Button(self.input_frame, text="▶ Run", command=self._on_submit,
+                  font=("Menlo", 11, "bold"), bg="#00ff88", fg="#0d0d0d",
+                  activebackground="#00cc66", activeforeground="#0d0d0d",
+                  borderwidth=0, padx=15,
+                  ).pack(side=tk.RIGHT, padx=10, pady=15)
 
-        tk.Button(
-            self.input_frame, text="▶ Run",
-            command=self._on_submit,
-            font=("Menlo", 11, "bold"),
-            bg="#00ff88", fg="#0d0d0d",
-            activebackground="#00cc66", activeforeground="#0d0d0d",
-            borderwidth=0,
-            padx=15,
-        ).pack(side=tk.RIGHT, padx=10, pady=15)
-
-        # ── Initial State ──
-        self.input_mode = "menu"
-        self.input_frame.pack_forget()  # Hide input bar on startup
+        self.input_frame.pack_forget()
         self._switch_to_menu()
 
     def run(self):
-        """Start the GUI application."""
         self.root.mainloop()
 
 
