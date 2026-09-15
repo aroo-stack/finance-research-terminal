@@ -1795,7 +1795,7 @@ def display_banner():
     """Print the app banner."""
     print(f"\n{Colors.BOLD}{Colors.CYAN}")
     print("  ╔══════════════════════════════════════════════════════╗")
-    print("  ║   🏦  FINANCE RESEARCH TERMINAL v2.0  🏦            ║")
+    print("  ║   🏦  FINANCE RESEARCH TERMINAL v4.0  🏦            ║")
     print("  ║   Multi-Agent DCF Analysis Engine                   ║")
     print("  ╚══════════════════════════════════════════════════════╝")
     print(f"{Colors.RESET}")
